@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx create-next-app@14 . --typescript --tailwind --eslint --app --src-dir=false --import-alias=\"@/*\" --no-git --yes)",
+      "Bash(npm install)",
+      "Bash(npm ls next)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(npm ls @supabase/ssr @supabase/supabase-js)",
+      "Bash(node -e \"const {createBrowserClient} = require\\(''@supabase/ssr''\\); console.log\\(typeof createBrowserClient\\);\")",
+      "Bash(npm run build)",
+      "Bash(netstat -ano)",
+      "Bash(powershell -Command \"Get-Process -Id 48512 2>/dev/null | Select-Object -Property Name,Id,Path\")",
+      "Bash(powershell -Command \"Get-WmiObject Win32_Process -Filter ''ProcessId=48512'' | Select-Object CommandLine\")",
+      "Bash(powershell -Command \"Stop-Process -Id 48512 -Force; Stop-Process -Id 19376 -Force\")",
+      "Bash(curl -s http://localhost:3000/)"
+    ]
+  }
+}
