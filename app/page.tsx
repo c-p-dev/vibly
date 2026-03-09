@@ -7,9 +7,9 @@ const FEATURE_CARDS = [
     description: 'Save your perfect setup — main track, layers, volumes — as one reusable stack. Load it in one click.',
   },
   {
-    icon: '⏱',
-    title: 'Sessions',
-    description: 'Run timed sessions with 15, 30, 45, or 60-minute countdowns. Auto-fade at the end.',
+    icon: '📓',
+    title: 'Journals',
+    description: 'Log what you noticed after each session — mood, focus, sleep. Track changes over time with dated entries.',
   },
   {
     icon: '🎚',
@@ -19,7 +19,7 @@ const FEATURE_CARDS = [
   {
     icon: '🔗',
     title: 'Share',
-    description: 'Share your stack with anyone via a single link — no account required for free shares.',
+    description: 'Share your stack with anyone via a single link — no account required to load it.',
   },
 ]
 
@@ -39,8 +39,8 @@ const FAQ = [
     a: 'No. Vibly is an audio layering tool. Nothing on this platform constitutes medical, psychological, or therapeutic advice. Use responsibly.',
   },
   {
-    q: 'How do local stacks work?',
-    a: 'Local stacks are saved in your browser storage — no account needed. They stay on your device until you clear browser data. Sign up for cloud sync.',
+    q: 'How do stacks work?',
+    a: 'Free users get 1 local stack saved in browser storage. Starter users get 5 cloud stacks that sync across devices. Pro users get 20 cloud stacks plus public share pages.',
   },
 ]
 
@@ -101,6 +101,36 @@ export default function LandingPage() {
                 {chip}
               </span>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ─── SIGNUP INCENTIVE ─── */}
+      <section className="mx-auto max-w-2xl px-4 pb-8 sm:px-6">
+        <div className="rounded-2xl border border-brand-600/30 bg-brand-600/10 p-6 text-center">
+          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-brand-600/40 bg-brand-600/20 px-3 py-1 text-xs text-brand-300">
+            🎁 Free account perk
+          </div>
+          <h2 className="text-xl font-bold text-white mb-2">
+            Sign up free → double your session time
+          </h2>
+          <p className="text-gray-400 text-sm mb-5">
+            Anonymous visitors get <strong className="text-white">5 minutes</strong> per session.{' '}
+            Create a free account and get <strong className="text-brand-300">10 minutes</strong> — no credit card required.
+          </p>
+          <div className="flex flex-wrap justify-center gap-3">
+            <Link
+              href="/auth"
+              className="rounded-xl bg-brand-500 px-6 py-2.5 text-sm font-semibold text-white hover:bg-brand-600 transition-colors"
+            >
+              Create free account →
+            </Link>
+            <Link
+              href="/account/billing"
+              className="rounded-xl border border-surface-border bg-surface px-6 py-2.5 text-sm font-medium text-gray-300 hover:bg-surface-raised transition-colors"
+            >
+              View all plans
+            </Link>
           </div>
         </div>
       </section>

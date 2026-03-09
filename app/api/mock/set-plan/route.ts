@@ -5,8 +5,9 @@ import type { Plan } from '@/lib/entitlements'
 const VALID_PLANS: Plan[] = ['free', 'starter', 'pro']
 
 export async function POST(request: Request) {
-  if (process.env.NEXT_PUBLIC_PAYMENTS_MODE !== 'mock') {
-    return NextResponse.json({ error: 'Not in mock mode' }, { status: 403 })
+  // Allow in any non-production environment for testing
+  if (process.env.NODE_ENV === 'production' && process.env.NEXT_PUBLIC_PAYMENTS_MODE !== 'mock') {
+    return NextResponse.json({ error: 'Not available in production' }, { status: 403 })
   }
 
   const supabase = await createServerSupabaseClient()

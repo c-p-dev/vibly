@@ -15,7 +15,8 @@ export function PaywallModal({ isOpen, onClose, feature }: PaywallModalProps) {
   const requiredPlan = PLAN_UPGRADE_MAP[feature]
   const featureLabel = FEATURE_LABELS[feature]
   const planLabel = getPlanLabel(requiredPlan)
-  const isMock = process.env.NEXT_PUBLIC_PAYMENTS_MODE !== 'stripe'
+  const mode = process.env.NEXT_PUBLIC_PAYMENTS_MODE || 'mock'
+  const isMock = mode === 'mock'
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Upgrade Required">

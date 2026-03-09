@@ -34,6 +34,7 @@ interface UseYouTubePlayerOptions {
   videoId: string | null
   volume: number
   nativeControls?: boolean
+  autoPlayOnLoad?: boolean
   onError?: (code: number) => void
   onReady?: () => void
 }
@@ -55,13 +56,27 @@ export function useYouTubePlayer(
     loadYTApi().then(() => {
       if (cancelled || !containerRef.current || !optionsRef.current.videoId) return
 
-      // Clean up previous player if any
+      // Hot-swap: if a player already exists, just load the new video into it
       if (playerRef.current) {
-        try { playerRef.current.destroy() } catch { /* ignore */ }
-        playerRef.current = null
+        try {
+          if (optionsRef.current.autoPlayOnLoad) {
+            playerRef.current.loadVideoById(optionsRef.current.videoId!)
+          } else {
+            playerRef.current.cueVideoById(optionsRef.current.videoId!)
+          }
+          playerRef.current.setVolume(optionsRef.current.volume)
+        } catch { /* ignore */ }
+        return
       }
 
-      playerRef.current = new window.YT.Player(containerRef.current, {
+      // Create an inner mount element for YouTube to replace.
+      // YouTube's IFrame API replaces the element you hand it with an <iframe>,
+      // so we give it a fresh child div — not containerRef.current itself —
+      // so React's reference to the container stays valid.
+      const mount = document.createElement('div')
+      containerRef.current.appendChild(mount)
+
+      playerRef.current = new window.YT.Player(mount, {
         videoId: optionsRef.current.videoId!,
         width: '100%',
         height: '100%',
@@ -91,13 +106,19 @@ export function useYouTubePlayer(
 
     return () => {
       cancelled = true
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [options.videoId])
+
+  // Destroy player only on unmount
+  useEffect(() => {
+    return () => {
       if (playerRef.current) {
         try { playerRef.current.destroy() } catch { /* ignore */ }
         playerRef.current = null
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [options.videoId])
+  }, [])
 
   // Update volume without re-creating player
   useEffect(() => {

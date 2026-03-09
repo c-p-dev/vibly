@@ -17,13 +17,14 @@ interface YouTubePlayerProps {
   volume: number
   isMain?: boolean
   nativeControls?: boolean
+  autoPlayOnLoad?: boolean
   onError?: (code: number) => void
   onReady?: () => void
   className?: string
 }
 
 export const YouTubePlayer = forwardRef<YouTubePlayerHandle, YouTubePlayerProps>(
-  function YouTubePlayer({ videoId, volume, isMain = false, nativeControls = false, onError, onReady, className }, ref) {
+  function YouTubePlayer({ videoId, volume, isMain = false, nativeControls = false, autoPlayOnLoad = false, onError, onReady, className }, ref) {
     const containerRef = useRef<HTMLDivElement>(null)
     const [errorCode, setErrorCode] = useState<number | null>(null)
 
@@ -36,6 +37,7 @@ export const YouTubePlayer = forwardRef<YouTubePlayerHandle, YouTubePlayerProps>
       videoId,
       volume,
       nativeControls,
+      autoPlayOnLoad,
       onError: handleError,
       onReady,
     })

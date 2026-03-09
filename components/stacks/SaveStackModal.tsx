@@ -4,46 +4,67 @@ import { useState } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { useEntitlements } from '@/hooks/useEntitlements'
-import { useStackStore } from '@/store/stackStore'
 import type { StackConfig } from '@/types/stack'
 
 interface SaveStackModalProps {
   isOpen: boolean
   onClose: () => void
   config: StackConfig
-  onSaved?: (stackId: string) => void
+  onSaved?: (stackId: string, stackName: string) => void
 }
 
 export function SaveStackModal({ isOpen, onClose, config, onSaved }: SaveStackModalProps) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
 
-  const { saveStack, localStacks } = useStackStore()
-  const { canSaveMoreLocalStacks } = useEntitlements()
+  const { plan, isSignedIn } = useEntitlements()
 
-  function handleSave() {
-    if (!name.trim()) {
-      setError('Stack name is required')
+  const stackLimit = plan === 'pro' ? 20 : plan === 'starter' ? 5 : 1
+
+  async function handleSave() {
+    if (!name.trim()) { setError('Stack name is required'); return }
+    if (!isSignedIn) { setError('Sign in to save stacks.'); return }
+
+    setSaving(true)
+    setError('')
+
+    const res = await fetch('/api/stacks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name.trim(), description: description.trim() || undefined, config }),
+    })
+    const json = await res.json() as { stack?: { id: string }; error?: string }
+    setSaving(false)
+
+    if (!res.ok) {
+      if (json.error === 'LIMIT_REACHED') {
+        setError(`You've reached the ${plan} plan limit of ${stackLimit} stack${stackLimit !== 1 ? 's' : ''}. Upgrade to save more.`)
+      } else {
+        setError('Failed to save. Please try again.')
+      }
       return
     }
 
-    if (!canSaveMoreLocalStacks(localStacks.length)) {
-      setError('You have reached the free plan limit of 5 stacks. Upgrade to save more.')
-      return
-    }
-
-    const stack = saveStack(name.trim(), config, description.trim() || undefined)
     setName('')
     setDescription('')
-    setError('')
     onClose()
-    onSaved?.(stack.id)
+    if (json.stack?.id) onSaved?.(json.stack.id, name.trim())
   }
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Save Stack">
       <div className="space-y-4">
+        <div className="flex items-center gap-2 rounded-lg bg-brand-600/10 border border-brand-600/20 px-3 py-2">
+          <svg className="h-4 w-4 text-brand-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
+          </svg>
+          <span className="text-xs text-brand-300">
+            Saving to cloud · {plan === 'free' ? '1 stack max' : `up to ${stackLimit} stacks on ${plan}`}
+          </span>
+        </div>
+
         <div>
           <label htmlFor="stack-name" className="block text-sm font-medium text-gray-300 mb-1.5">
             Name <span className="text-red-400">*</span>
@@ -75,6 +96,10 @@ export function SaveStackModal({ isOpen, onClose, config, onSaved }: SaveStackMo
           />
         </div>
 
+        {!isSignedIn && (
+          <p className="text-sm text-amber-400">You must be signed in to save stacks.</p>
+        )}
+
         {error && (
           <p className="text-sm text-red-400">{error}</p>
         )}
@@ -83,8 +108,8 @@ export function SaveStackModal({ isOpen, onClose, config, onSaved }: SaveStackMo
           <Button variant="ghost" className="flex-1" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" className="flex-1" onClick={handleSave}>
-            Save Stack
+          <Button variant="primary" className="flex-1" onClick={handleSave} disabled={saving || !isSignedIn}>
+            {saving ? 'Saving…' : 'Save Stack'}
           </Button>
         </div>
       </div>

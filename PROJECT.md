@@ -9,6 +9,8 @@ TECH STACK
 - Supabase (Auth + Postgres + RLS) for user accounts and cloud stacks
 - YouTube IFrame Player API for playback control
 - Payment system: MOCKED in MVP, later Stripe Checkout + webhooks
+  (can also switch to PayMongo or another gateway – the architecture
+  is provider‑agnostic)
 
 CORE PRODUCT POSITIONING
 - Value prop: “Play the vibe you love. Layer subliminals underneath.”
@@ -88,21 +90,22 @@ Do NOT integrate Stripe in MVP. Instead implement:
 - Implementation detail:
   - Create a unified hook: useEntitlements()
   - Priority: local override (dev only) -> Supabase entitlements -> default free.
-  - Add env flag NEXT_PUBLIC_PAYMENTS_MODE = "mock" | "stripe".
+  - Add env flag NEXT_PUBLIC_PAYMENTS_MODE = "mock" | "stripe" | "paymongo".
   - In mock mode, all upgrade actions are local and do not require Stripe.
-  - In stripe mode, the same UI should call real checkout endpoints (which can be stubbed with TODOs).
+  - In stripe or paymongo mode, the same UI should call real checkout endpoints (which can be stubbed with TODOs).
 
 Mock tiers:
 - Free: player + limited local stacks (e.g. 5)
 - Starter: unlimited local stacks + fade-out timer
 - Pro: cloud stacks + public share pages + routines placeholders
 
-6) STRIPE INTEGRATION STUBS (for later)
+6) PAYMENT PROVIDER STUBS (for later; Stripe shown first)
 Create empty/stubbed endpoints with clear TODOs but do not implement fully:
 - /api/payments/checkout (returns 501 in mock mode or a fake URL)
 - /api/payments/webhook (TODO)
 - /api/payments/portal (TODO)
-The UI should already be wired to call these endpoints when NEXT_PUBLIC_PAYMENTS_MODE="stripe".
+The UI should already be wired to call these endpoints when
+NEXT_PUBLIC_PAYMENTS_MODE is not "mock" (i.e. "stripe" or "paymongo").
 
 7) ROUTES / PAGES
 - / (Landing)
@@ -129,7 +132,7 @@ DELIVERABLES
 - Documentation:
   - Setup steps
   - How mock payments work
-  - How to switch to Stripe mode later
+  - How to switch to Stripe/PayMongo mode later
   - Known limitations (autoplay restrictions, embed restrictions)
 
 Focus on correctness and a shippable MVP. Build the paywall architecture so Stripe can be added later with minimal changes.

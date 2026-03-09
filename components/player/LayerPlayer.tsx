@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, forwardRef, useImperativeHandle } from 'react'
+import { useRef, forwardRef, useImperativeHandle, useEffect, useState } from 'react'
 import { YouTubePlayer, type YouTubePlayerHandle } from './YouTubePlayer'
 import { VolumeSlider } from '@/components/ui/VolumeSlider'
 import type { LayerConfig } from '@/types/stack'
@@ -15,7 +15,6 @@ export interface LayerPlayerHandle {
 
 interface LayerPlayerProps {
   layer: LayerConfig
-  groupVolume: number
   onUpdate: (patch: Partial<LayerConfig>) => void
   onRemove: () => void
 }
@@ -23,11 +22,29 @@ interface LayerPlayerProps {
 export const LayerPlayer = forwardRef<LayerPlayerHandle, LayerPlayerProps>(
 function LayerPlayer({
   layer,
-  groupVolume,
   onUpdate,
   onRemove,
 }, ref) {
   const playerRef = useRef<YouTubePlayerHandle>(null)
+  const [fetchedTitle, setFetchedTitle] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (layer.label) return
+    let cancelled = false
+    fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${layer.videoId}&format=json`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return
+        const title = data?.title as string | undefined
+        if (title) {
+          setFetchedTitle(title)
+          onUpdate({ label: title })
+        }
+      })
+      .catch(() => {/* ignore */})
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layer.videoId])
 
   useImperativeHandle(ref, () => ({
     play:      () => playerRef.current?.play(),
@@ -36,10 +53,7 @@ function LayerPlayer({
     setVolume: (v) => playerRef.current?.setVolume(v),
   }))
 
-  // Effective volume = layer volume * group volume / 100
-  const effectiveVolume = layer.muted
-    ? 0
-    : Math.round((layer.volume * groupVolume) / 100)
+  const effectiveVolume = layer.muted ? 0 : layer.volume
 
   return (
     <div className={cn(
@@ -60,8 +74,8 @@ function LayerPlayer({
         {/* Controls */}
         <div className="flex flex-1 flex-col gap-2 min-w-0">
           <div className="flex items-center justify-between gap-2">
-            <p className="truncate text-xs text-gray-400 font-mono">
-              {layer.label || layer.videoId}
+            <p className="truncate text-sm font-medium text-gray-200" title={layer.label || fetchedTitle || layer.videoId}>
+              {layer.label || fetchedTitle || layer.videoId}
             </p>
             <div className="flex items-center gap-1 flex-shrink-0">
               {/* Mute toggle */}

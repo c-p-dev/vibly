@@ -5,9 +5,11 @@ import { useEntitlementsStore } from '@/store/entitlementsStore'
 import { useSupabaseUser } from '@/hooks/useSupabaseUser'
 import {
   canUseCloudStacks,
-  canUseFadeOut,
   canUsePublicShare,
+  canUseJournals,
   canSaveMoreLocalStacks,
+  canSaveMoreCloudStacks,
+  getMaxLayers,
   getPlanLabel,
 } from '@/lib/entitlements'
 
@@ -28,11 +30,14 @@ export function useEntitlements() {
     isLoading,
     planLabel: getPlanLabel(plan),
     canUseCloudStacks: canUseCloudStacks(plan),
-    canUseFadeOut: canUseFadeOut(plan),
     canUsePublicShare: canUsePublicShare(plan),
+    canUseJournals: canUseJournals(plan),
     canSaveMoreLocalStacks: (count: number) => canSaveMoreLocalStacks(plan, count),
+    canSaveMoreCloudStacks: (count: number) => canSaveMoreCloudStacks(plan, count),
+    maxLayers: getMaxLayers(plan),
     mockActivate,
     mockReset,
+    loadFromSupabase,
     isPaid: plan !== 'free',
     isSignedIn: !!user,
     user,

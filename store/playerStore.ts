@@ -8,19 +8,12 @@ interface MainVideo {
   volume: number
 }
 
-interface TimerSettings {
-  durationMinutes: number | null
-  fadeOut: boolean
-  customMinutes: number
-}
-
 export type SessionState = 'idle' | 'playing' | 'paused' | 'stopped'
 
 interface PlayerState {
   mainVideo: MainVideo
   layers: LayerConfig[]
   layerGroupVolume: number
-  timer: TimerSettings
   sessionState: SessionState
   sessionStartedAt: number | null
 
@@ -30,7 +23,6 @@ interface PlayerState {
   removeLayer: (id: string) => void
   updateLayer: (id: string, patch: Partial<LayerConfig>) => void
   setLayerGroupVolume: (v: number) => void
-  setTimer: (t: Partial<TimerSettings>) => void
   startSession: () => void
   pauseSession: () => void
   stopSession: () => void
@@ -38,17 +30,10 @@ interface PlayerState {
   reset: () => void
 }
 
-const DEFAULT_TIMER: TimerSettings = {
-  durationMinutes: null,
-  fadeOut: false,
-  customMinutes: 30,
-}
-
 export const usePlayerStore = create<PlayerState>()((set) => ({
   mainVideo: { url: '', videoId: null, volume: 80 },
   layers: [],
   layerGroupVolume: 60,
-  timer: DEFAULT_TIMER,
   sessionState: 'idle',
   sessionStartedAt: null,
 
@@ -76,8 +61,6 @@ export const usePlayerStore = create<PlayerState>()((set) => ({
 
   setLayerGroupVolume: (v) => set({ layerGroupVolume: v }),
 
-  setTimer: (t) => set((s) => ({ timer: { ...s.timer, ...t } })),
-
   startSession: () =>
     set({ sessionState: 'playing', sessionStartedAt: Date.now() }),
 
@@ -91,11 +74,6 @@ export const usePlayerStore = create<PlayerState>()((set) => ({
       mainVideo: { url: '', videoId: config.mainVideoId, volume: config.mainVolume },
       layers: config.layers,
       layerGroupVolume: config.layerGroupVolume,
-      timer: {
-        durationMinutes: config.timer.durationMinutes,
-        fadeOut: config.timer.fadeOut,
-        customMinutes: config.timer.durationMinutes ?? 30,
-      },
       sessionState: 'idle',
       sessionStartedAt: null,
     }),
@@ -105,7 +83,6 @@ export const usePlayerStore = create<PlayerState>()((set) => ({
       mainVideo: { url: '', videoId: null, volume: 80 },
       layers: [],
       layerGroupVolume: 60,
-      timer: DEFAULT_TIMER,
       sessionState: 'idle',
       sessionStartedAt: null,
     }),

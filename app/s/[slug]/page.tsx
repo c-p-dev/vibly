@@ -5,6 +5,7 @@ import { encodeStackToParam } from '@/lib/share'
 import { getThumbnailUrl } from '@/lib/youtube'
 import type { StackConfig } from '@/types/stack'
 import Image from 'next/image'
+import { JournalSection } from '@/components/stacks/JournalSection'
 
 interface Props {
   params: Promise<{ slug: string }>
@@ -100,6 +101,8 @@ export default async function PublicStackPage({ params }: Props) {
           </div>
         </div>
       </div>
+
+      <JournalSection stackId={stack.id} readOnly />
 
       <p className="mt-6 text-center text-xs text-gray-600">
         Shared via <Link href="/" className="text-gray-500 hover:text-gray-300">Vibly</Link>

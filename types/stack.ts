@@ -11,10 +11,6 @@ export interface StackConfig {
   mainVolume: number
   layerGroupVolume: number
   layers: LayerConfig[]
-  timer: {
-    durationMinutes: number | null
-    fadeOut: boolean
-  }
 }
 
 export interface Stack {

@@ -6,55 +6,66 @@ import { Badge } from '@/components/ui/Badge'
 import { cn } from '@/lib/utils'
 import type { Plan } from '@/lib/entitlements'
 
+const mode = process.env.NEXT_PUBLIC_PAYMENTS_MODE || 'mock'
+const isMock = mode === 'mock'
+const isDev = process.env.NODE_ENV !== 'production'
+
 const PLANS: { id: Plan; label: string; price: string; features: string[] }[] = [
   {
     id: 'free',
     label: 'Free',
     price: '$0',
-    features: ['Player access', 'Up to 5 local stacks', 'Share via URL link'],
+    features: ['1 cloud stack', 'Ads', '5 min session (10 min if signed in)'],
   },
   {
     id: 'starter',
     label: 'Starter',
     price: '$5/mo',
-    features: ['Everything in Free', 'Unlimited local stacks', 'Fade out timer'],
+    features: ['5 cloud stacks', 'No ads', 'Journals & session notes', 'Unlimited sessions'],
   },
   {
     id: 'pro',
     label: 'Pro',
     price: '$10/mo',
-    features: ['Everything in Starter', 'Cloud stacks (sync)', 'Public share pages'],
+    features: ['Everything in Starter', '20 cloud stacks', 'Public share pages'],
   },
 ]
 
-const isMock = process.env.NEXT_PUBLIC_PAYMENTS_MODE !== 'stripe'
-
 export default function BillingPage() {
-  const { plan, planLabel, mockActivate, mockReset } = useEntitlements()
+  const { plan, planLabel, mockActivate, mockReset, loadFromSupabase, user } = useEntitlements()
+
+  async function handleDevSetPlan(targetPlan: Plan) {
+    // Always write to Supabase in dev so server-side checks see the updated plan
+    const res = await fetch('/api/mock/set-plan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plan: targetPlan }),
+    })
+    if (res.ok) {
+      mockActivate(targetPlan) // also update localStorage for immediate UI refresh
+      if (user?.id) loadFromSupabase(user.id) // re-read from Supabase
+    }
+  }
 
   async function handleUpgrade(targetPlan: Plan) {
     if (isMock) {
-      mockActivate(targetPlan)
+      handleDevSetPlan(targetPlan)
       return
     }
 
-    // Stripe mode — call checkout endpoint
+    // real payments mode — call checkout endpoint
     const res = await fetch('/api/payments/checkout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        priceId:
-          targetPlan === 'starter'
-            ? process.env.NEXT_PUBLIC_STRIPE_STARTER_PRICE_ID
-            : process.env.NEXT_PUBLIC_STRIPE_PRO_PRICE_ID,
-      }),
+      body: JSON.stringify({ plan: targetPlan }),
     })
 
     if (res.ok) {
       const { url } = await res.json()
       window.location.href = url
     } else {
-      alert('Stripe checkout is not configured yet.')
+      const json = await res.json().catch(() => ({})) as { error?: string }
+      alert(json.error ?? 'Checkout failed. Please try again.')
     }
   }
 
@@ -130,24 +141,27 @@ export default function BillingPage() {
         })}
       </div>
 
-      {isMock && (
-        <div className="mt-8 rounded-xl border border-surface-border bg-surface-raised p-5">
-          <h3 className="mb-2 text-sm font-semibold text-white">Dev Controls</h3>
+      {isDev && (
+        <div className="mt-8 rounded-xl border border-yellow-700/40 bg-yellow-900/10 p-5">
+          <h3 className="mb-2 text-sm font-semibold text-yellow-400">Dev Controls</h3>
           <p className="mb-3 text-xs text-gray-500">
-            These mock controls update your local plan for testing. They do not charge any card.
+            Updates your plan in Supabase for testing. Does not charge any card.
           </p>
           <div className="flex flex-wrap gap-2">
-            <Button variant="ghost" size="sm" onClick={() => mockActivate('free')}>
+            <Button variant="ghost" size="sm" onClick={() => handleDevSetPlan('free')}>
               → Free
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => mockActivate('starter')}>
+            <Button variant="ghost" size="sm" onClick={() => handleDevSetPlan('starter')}>
               → Starter
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => mockActivate('pro')}>
+            <Button variant="ghost" size="sm" onClick={() => handleDevSetPlan('pro')}>
               → Pro
             </Button>
             <Button variant="danger" size="sm" onClick={mockReset}>
-              Reset
+              Reset local
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => fetch('/api/mock/reset-timer', { method: 'POST' })}>
+              Reset session timer
             </Button>
           </div>
         </div>

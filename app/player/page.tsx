@@ -12,12 +12,16 @@ import { PlayerControls } from '@/components/player/PlayerControls'
 import { VolumeSlider } from '@/components/ui/VolumeSlider'
 import { Button } from '@/components/ui/Button'
 import { SaveStackModal } from '@/components/stacks/SaveStackModal'
+import { JournalSection } from '@/components/stacks/JournalSection'
+import { useFreeTierSession } from '@/hooks/useFreeTierSession'
+import { useEntitlements } from '@/hooks/useEntitlements'
+import { SessionCalendar } from '@/components/player/SessionCalendar'
 import type { StackConfig } from '@/types/stack'
 
 function PlayerPageInner() {
   const searchParams = useSearchParams()
   const {
-    mainVideo, layers, layerGroupVolume,
+    mainVideo, layers, layerGroupVolume, sessionState,
     setMainUrl, setMainVolume, addLayer,
     removeLayer, updateLayer, setLayerGroupVolume,
     startSession, pauseSession, stopSession,
@@ -33,12 +37,75 @@ function PlayerPageInner() {
   const [layerUrlError, setLayerUrlError] = useState('')
   const [saveModalOpen, setSaveModalOpen] = useState(false)
   const [shareCopied, setShareCopied] = useState(false)
+  const [mainTitle, setMainTitle] = useState<string | null>(null)
+  const [savedStackId, setSavedStackId] = useState<string | null>(null)
+  const [savedStackName, setSavedStackName] = useState<string | null>(null)
+  const [lastSavedConfig, setLastSavedConfig] = useState<string | null>(null)
+  const [updating, setUpdating] = useState(false)
+  const [calendarRefreshKey, setCalendarRefreshKey] = useState(0)
+  // Accurate play-time tracking (excludes pauses)
+  const playSegmentStartRef = useRef<number | null>(null)
+  const totalPlayedMsRef = useRef<number>(0)
 
-  // Load stack from URL query param on mount
+  const isPlaying = sessionState === 'playing'
+  const { onSessionStart, remainingMs } = useFreeTierSession(isPlaying)
+  const { canUseJournals, maxLayers } = useEntitlements()
+
+  // Compute current config as a canonical string for change detection
+  const currentConfigStr = JSON.stringify({
+    mainVideoId: mainVideo.videoId ?? '',
+    mainVolume: mainVideo.volume,
+    layerGroupVolume,
+    layers,
+  })
+  const hasUnsavedChanges = !!(savedStackId && lastSavedConfig && currentConfigStr !== lastSavedConfig)
+
+  function applyStackConfig(config: StackConfig) {
+    loadStackConfig(config)
+    if (config.mainVideoId) {
+      setMainUrlInput(`https://www.youtube.com/watch?v=${config.mainVideoId}`)
+    }
+    setLastSavedConfig(JSON.stringify(config))
+  }
+
+  // On mount: load from saved stack ID (URL param > localStorage) or URL-encoded stack param
   useEffect(() => {
-    const stackParam = searchParams.get('stack')
-    if (stackParam) {
-      const config = decodeStackFromParam(stackParam)
+    const urlStackId = searchParams.get('stackId')
+    const urlStackName = searchParams.get('stackName')
+    const urlStackParam = searchParams.get('stack')
+    const storedId = localStorage.getItem('vibly_player_stack_id')
+    const storedName = localStorage.getItem('vibly_player_stack_name')
+    const stackId = urlStackId ?? storedId
+
+    if (stackId) {
+      // Load saved cloud stack from API (works on refresh too)
+      const name = urlStackName ?? storedName
+      setSavedStackId(stackId)
+      setSavedStackName(name)
+      localStorage.setItem('vibly_player_stack_id', stackId)
+      if (name) localStorage.setItem('vibly_player_stack_name', name)
+
+      fetch(`/api/stacks/${stackId}`)
+        .then((r) => {
+          if (!r.ok) {
+            // Stack not accessible — clear stale state
+            localStorage.removeItem('vibly_player_stack_id')
+            localStorage.removeItem('vibly_player_stack_name')
+            setSavedStackId(null)
+            setSavedStackName(null)
+            return null
+          }
+          return r.json() as Promise<{ stack: { config: StackConfig; name: string } }>
+        })
+        .then((data) => {
+          if (!data) return
+          applyStackConfig(data.stack.config as StackConfig)
+          if (!urlStackName && !storedName) setSavedStackName(data.stack.name)
+        })
+        .catch(() => {})
+    } else if (urlStackParam) {
+      // Temporary load from share URL — not saved
+      const config = decodeStackFromParam(urlStackParam)
       if (config) {
         loadStackConfig(config)
         if (config.mainVideoId) {
@@ -56,6 +123,16 @@ function PlayerPageInner() {
     }
   }, [mainVideo.videoId, mainUrlInput])
 
+  useEffect(() => {
+    if (!mainVideo.videoId) { setMainTitle(null); return }
+    let cancelled = false
+    fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${mainVideo.videoId}&format=json`)
+      .then((r) => r.json())
+      .then((data) => { if (!cancelled) setMainTitle(data?.title ?? null) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [mainVideo.videoId])
+
   function handleMainUrlChange(url: string) {
     setMainUrlInput(url)
     setMainUrlError('')
@@ -72,49 +149,75 @@ function PlayerPageInner() {
       setLayerUrlError('Could not extract a valid YouTube video ID.')
       return
     }
+    if (layers.length >= maxLayers) {
+      setLayerUrlError(`Free plan allows up to ${maxLayers} layers. Upgrade to Starter for unlimited.`)
+      return
+    }
     addLayer(videoId)
     setLayerUrlInput('')
     setLayerUrlError('')
   }
 
-  const allPlay = useCallback(() => {
+  const allPlay = useCallback(async () => {
     mainPlayerRef.current?.setVolume(mainVideo.volume)
     mainPlayerRef.current?.play()
     layerPlayerRefs.current.forEach((ref, id) => {
       const layer = layers.find((l) => l.id === id)
-      if (layer) {
-        const vol = layer.muted ? 0 : Math.round((layer.volume * layerGroupVolume) / 100)
-        ref.setVolume(vol)
-      }
+      if (layer) ref.setVolume(layer.muted ? 0 : layer.volume)
       ref.play()
     })
     startSession()
-  }, [startSession, mainVideo.volume, layers, layerGroupVolume])
+    playSegmentStartRef.current = Date.now()
+    await onSessionStart()
+  }, [startSession, onSessionStart, mainVideo.volume, layers])
 
   const allPause = useCallback(() => {
     mainPlayerRef.current?.pause()
     layerPlayerRefs.current.forEach((ref) => ref.pause())
     pauseSession()
+    // Accumulate this play segment
+    if (playSegmentStartRef.current) {
+      totalPlayedMsRef.current += Date.now() - playSegmentStartRef.current
+      playSegmentStartRef.current = null
+    }
   }, [pauseSession])
 
   const allStop = useCallback(() => {
     mainPlayerRef.current?.stop()
     layerPlayerRefs.current.forEach((ref) => ref.stop())
     stopSession()
-  }, [stopSession])
+    // Accumulate final play segment then log
+    if (playSegmentStartRef.current) {
+      totalPlayedMsRef.current += Date.now() - playSegmentStartRef.current
+      playSegmentStartRef.current = null
+    }
+    const durationSeconds = totalPlayedMsRef.current / 1000
+    totalPlayedMsRef.current = 0
+    if (durationSeconds >= 5) {
+      fetch('/api/session/log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stackId: savedStackId, stackName: savedStackName, durationSeconds }),
+      }).then(() => setCalendarRefreshKey(k => k + 1)).catch(() => {})
+    }
+  }, [stopSession, savedStackId, savedStackName])
 
-  function handleFadeStart() {
-    // Gradually reduce all volumes over 10 seconds
-    const steps = 20
-    const intervalMs = 500
-    let step = 0
-    const ticker = setInterval(() => {
-      step++
-      const factor = Math.max(0, 1 - step / steps)
-      mainPlayerRef.current?.setVolume(Math.round(mainVideo.volume * factor))
-      layerPlayerRefs.current.forEach((ref) => ref.setVolume(Math.round(30 * factor)))
-      if (step >= steps) clearInterval(ticker)
-    }, intervalMs)
+  async function handleUpdate() {
+    if (!savedStackId) return
+    setUpdating(true)
+    const config: StackConfig = {
+      mainVideoId: mainVideo.videoId ?? '',
+      mainVolume: mainVideo.volume,
+      layerGroupVolume,
+      layers,
+    }
+    const res = await fetch(`/api/stacks/${savedStackId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config }),
+    })
+    setUpdating(false)
+    if (res.ok) setLastSavedConfig(JSON.stringify(config))
   }
 
   function handleShare() {
@@ -123,7 +226,6 @@ function PlayerPageInner() {
       mainVolume: mainVideo.volume,
       layerGroupVolume,
       layers,
-      timer: { durationMinutes: null, fadeOut: false },
     }
     const url = buildShareUrl(config)
     navigator.clipboard.writeText(url).then(() => {
@@ -137,13 +239,18 @@ function PlayerPageInner() {
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-        {/* Left column */}
+        {/* Left column — main track + layers + journal */}
         <div className="space-y-5">
           {/* Main video */}
           <section className="rounded-2xl border border-surface-border bg-surface-raised p-5">
-            <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-gray-400">
-              Main Track
-            </h2>
+            <div className="mb-4 flex items-baseline gap-2">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-400 flex-shrink-0">
+                Main Track
+              </h2>
+              {mainTitle && (
+                <span className="truncate text-sm font-medium text-gray-200">— {mainTitle}</span>
+              )}
+            </div>
 
             <div className="mb-4 space-y-2">
               <input
@@ -164,6 +271,7 @@ function PlayerPageInner() {
               volume={mainVideo.volume}
               isMain
               nativeControls
+              autoPlayOnLoad={false}
             />
 
             <div className="mt-4">
@@ -194,11 +302,10 @@ function PlayerPageInner() {
                     value={layerGroupVolume}
                     onChange={(v) => {
                       setLayerGroupVolume(v)
+                      layers.forEach((layer) => updateLayer(layer.id, { volume: v }))
                       layerPlayerRefs.current.forEach((ref, id) => {
                         const layer = layers.find((l) => l.id === id)
-                        if (layer) {
-                          ref.setVolume(layer.muted ? 0 : Math.round((layer.volume * v) / 100))
-                        }
+                        ref.setVolume(layer?.muted ? 0 : v)
                       })
                     }}
                     label="Layer group volume"
@@ -265,7 +372,6 @@ function PlayerPageInner() {
                       else layerPlayerRefs.current.delete(layer.id)
                     }}
                     layer={layer}
-                    groupVolume={layerGroupVolume}
                     onUpdate={(patch) => updateLayer(layer.id, patch)}
                     onRemove={() => removeLayer(layer.id)}
                   />
@@ -273,16 +379,52 @@ function PlayerPageInner() {
               </div>
             )}
           </section>
+
+          {/* Journal */}
+          <section className="rounded-2xl border border-surface-border bg-surface-raised p-5">
+            <div className="mb-4 flex items-baseline gap-2">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-400 flex-shrink-0">Journal</h2>
+              {savedStackId && savedStackName && (
+                <span className="truncate text-sm font-medium text-gray-200">— {savedStackName}</span>
+              )}
+            </div>
+            {!canUseJournals ? (
+              <div className="flex flex-col items-center rounded-xl border border-dashed border-surface-border py-8 text-center">
+                <p className="text-sm text-gray-500">Journals are a Starter feature.</p>
+                <p className="mt-1 text-xs text-gray-600">Upgrade to Starter to track your sessions with private and public notes.</p>
+                <a
+                  href="/account/billing"
+                  className="mt-4 rounded-lg border border-brand-600/40 bg-brand-600/10 px-3 py-1.5 text-xs text-brand-400 hover:bg-brand-600/20 transition-colors"
+                >
+                  Upgrade to Starter
+                </a>
+              </div>
+            ) : savedStackId ? (
+              <JournalSection stackId={savedStackId} />
+            ) : (
+              <div className="flex flex-col items-center rounded-xl border border-dashed border-surface-border py-8 text-center">
+                <p className="text-sm text-gray-500">No stack saved yet.</p>
+                <p className="mt-1 text-xs text-gray-600">Save this stack to cloud to start journaling your sessions.</p>
+                <button
+                  onClick={() => setSaveModalOpen(true)}
+                  disabled={!canStart}
+                  className="mt-4 rounded-lg border border-surface-border px-3 py-1.5 text-xs text-gray-400 hover:border-brand-500 hover:text-brand-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Save Stack
+                </button>
+              </div>
+            )}
+          </section>
         </div>
 
-        {/* Right column — controls + actions */}
+        {/* Right column — controls + stack actions */}
         <div className="space-y-4">
           <PlayerControls
             onPlay={allPlay}
             onPause={allPause}
             onStop={allStop}
-            onFadeStart={handleFadeStart}
             canStart={canStart}
+            remainingMs={remainingMs}
           />
 
           {/* Save & Share */}
@@ -290,6 +432,19 @@ function PlayerPageInner() {
             <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
               Stack
             </h3>
+            {hasUnsavedChanges && (
+              <Button
+                variant="primary"
+                className="w-full"
+                onClick={handleUpdate}
+                disabled={updating}
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                {updating ? 'Updating…' : 'Update Stack'}
+              </Button>
+            )}
             <Button
               variant="secondary"
               className="w-full"
@@ -325,6 +480,9 @@ function PlayerPageInner() {
             </Button>
           </div>
 
+          {/* Session Calendar */}
+          <SessionCalendar refreshKey={calendarRefreshKey} />
+
           {/* Tips */}
           <div className="rounded-xl border border-surface-border bg-surface/50 p-4 text-xs text-gray-500 space-y-1.5">
             <p className="font-medium text-gray-400">Tips</p>
@@ -343,7 +501,13 @@ function PlayerPageInner() {
           mainVolume: mainVideo.volume,
           layerGroupVolume,
           layers,
-          timer: { durationMinutes: null, fadeOut: false },
+        }}
+        onSaved={(id, name) => {
+          setSavedStackId(id)
+          setSavedStackName(name)
+          setLastSavedConfig(currentConfigStr)
+          localStorage.setItem('vibly_player_stack_id', id)
+          localStorage.setItem('vibly_player_stack_name', name)
         }}
       />
     </div>
