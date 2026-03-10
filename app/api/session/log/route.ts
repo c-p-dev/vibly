@@ -18,7 +18,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true })
   }
 
-  const { error } = await supabase
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
     .from('listening_sessions')
     .insert({
       user_id: user.id,

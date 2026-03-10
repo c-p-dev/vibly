@@ -23,9 +23,10 @@ export async function GET(req: Request) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
+  type SessionRow = { started_at: string; duration_seconds: number; stack_name: string | null }
   // Group by local date (YYYY-MM-DD)
   const byDate = new Map<string, { totalSeconds: number; stacks: Set<string> }>()
-  for (const row of data ?? []) {
+  for (const row of (data ?? []) as SessionRow[]) {
     const date = row.started_at.slice(0, 10)
     const entry = byDate.get(date) ?? { totalSeconds: 0, stacks: new Set<string>() }
     entry.totalSeconds += row.duration_seconds
